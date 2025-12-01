@@ -7,7 +7,7 @@ export const auth = {
     return true
   },
   async logout() {
-    if (typeof window !== 'undefined') sessionStorage.removeItem('demo_token')
+    if (typeof window !== 'undefined') localStorage.removeItem('super_admin_logged_in')
     return Promise.resolve()
   },
   getUser() {

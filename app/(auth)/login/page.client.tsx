@@ -42,7 +42,7 @@ export default function SuperAdminLoginPage() {
         localStorage.setItem(SUPER_ADMIN_STORAGE_KEY, "true");
       }
       // redirect to main super admin dashboard
-      router.replace("/dashboard");
+      router.replace("/admin/dashboard");
     } else {
       setError("Invalid credentials.");
     }
