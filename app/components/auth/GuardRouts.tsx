@@ -8,7 +8,7 @@ interface SuperAdminGuardProps {
   children: ReactNode;
 }
 
-export function SuperAdminGuard({ children }: SuperAdminGuardProps) {
+export function GuardRoute({ children }: SuperAdminGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -22,7 +22,7 @@ export function SuperAdminGuard({ children }: SuperAdminGuardProps) {
 
     if (!isLoggedIn) {
       setAuthorized(false);
-      router.replace("/super-admin/login?next=" + encodeURIComponent(pathname));
+      router.replace("/login?next=" + encodeURIComponent(pathname));
     } else {
       setAuthorized(true);
     }
