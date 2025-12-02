@@ -53,6 +53,7 @@ export default function PatientRegistrationPage() {
                 <th className="px-4 py-2">Name</th>
                 <th className="px-4 py-2">Age</th>
                 <th className="px-4 py-2">Registered At</th>
+                <th className="px-4 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -65,6 +66,14 @@ export default function PatientRegistrationPage() {
                       dateStyle: 'medium',
                       timeStyle: 'short',
                     })}
+                  </td>
+                  <td className="px-4 py-2">
+                    <Link
+                      href={`/admin/dashboard/patient-registration/${p.id}`}
+                      className="text-indigo-600 text-sm"
+                    >
+                      Open
+                    </Link>
                   </td>
                 </tr>
               ))}

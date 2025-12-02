@@ -1,129 +1,192 @@
-'use client'
+"use client";
 
-import React, { FormEvent, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
+import React, { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { load, save } from "@/app/lib/storage";
+import { generateId } from "@/app/lib/uid";
+
+type AppointmentInfo = {
+  id: string;
+  doctorId: string;
+  slotId?: string;
+  start: string;
+  end: string;
+  tokenNumber: string;
+  createdAt: string;
+};
 
 type Patient = {
-  id: string
-  name: string
-  age: number
-  createdAt: string
-}
+  id: string;
+  name: string;
+  age: number;
+  doctorId: string | null;
+  createdAt: string;
+  appointments?: AppointmentInfo[] | null;
+};
 
-const STORAGE_KEY = 'patient_registration_patients'
+type Doctor = {
+  id: string;
+  name: string;
+  type?: string;
+};
+
+const STORAGE_KEY = "patient_registration_patients";
 
 export default function NewPatientPage() {
-  const router = useRouter()
+  const router = useRouter();
 
-  const [name, setName] = useState('')
-  const [age, setAge] = useState<string>('')
-  const [error, setError] = useState<string | null>(null)
+  const [name, setName] = useState("");
+  const [age, setAge] = useState<string>("");
+  const [doctorId, setDoctorId] = useState<string>("");
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load doctors for dropdown
+  useEffect(() => {
+    const docs = load("doctors", []) as Doctor[];
+    setDoctors(docs);
+    if (docs.length && !doctorId) {
+      setDoctorId(docs[0].id);
+    }
+  }, []);
 
   function handleSubmit(e: FormEvent) {
-    e.preventDefault()
-    setError(null)
+    e.preventDefault();
+    setError(null);
 
-    const trimmedName = name.trim()
-    const parsedAge = Number(age)
+    const trimmedName = name.trim();
+    const parsedAge = Number(age);
 
     if (!trimmedName) {
-      setError("Please enter the patient's name.")
-      return
+      setError("Please enter the patient's name.");
+      return;
     }
 
     if (!age || Number.isNaN(parsedAge) || parsedAge <= 0) {
-      setError('Please enter a valid age.')
-      return
+      setError("Please enter a valid age.");
+      return;
     }
 
-    let existing: Patient[] = []
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(STORAGE_KEY)
-        if (stored) {
-          existing = JSON.parse(stored)
-        }
-      } catch (err) {
-        console.error('Failed to read patients from localStorage', err)
-      }
-    }
+    const patients = load(STORAGE_KEY, []) as Patient[];
 
     const newPatient: Patient = {
-      id: crypto.randomUUID(),
+      id: generateId("pat_"),
       name: trimmedName,
       age: parsedAge,
+      doctorId: doctorId || null,
       createdAt: new Date().toISOString(),
+      appointments: null,
+    };
+
+    patients.push(newPatient);
+    save(STORAGE_KEY, patients);
+
+    // broadcast so list pages can reload if they listen
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("patients-updated", {
+          detail: { patientId: newPatient.id },
+        })
+      );
     }
 
-    const updated = [newPatient, ...existing]
-
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated))
-      } catch (err) {
-        console.error('Failed to save patient to localStorage', err)
-      }
-    }
-
-    // After saving, go back to list
-    router.push('/admin/dashboard/patient-registration')
+    router.push("/admin/dashboard/patient-registration");
   }
 
   return (
     <div className="space-y-4">
-      {/* Header row matching style */}
+      {/* Header row matching doctor create page style */}
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-semibold">Add Patient</h3>
-        <Button
+        <button
           type="button"
-          variant="outline"
-          className="text-sm"
-          onClick={() => router.push('/admin/dashboard/patient-registration')}
+          onClick={() => router.push("/admin/dashboard/patient-registration")}
+          className="px-3 py-1 border rounded text-sm"
         >
           Cancel
-        </Button>
+        </button>
       </div>
 
       {/* Form card */}
-      <div className="bg-white border rounded-lg p-4">
-        <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
-          <div className="space-y-2">
-            <Label htmlFor="patient-name">Patient Name</Label>
-            <Input
-              id="patient-name"
-              placeholder="Enter full name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-4 rounded border space-y-3 max-w-xl"
+      >
+        <div>
+          <label
+            htmlFor="patient-name"
+            className="block text-sm text-slate-600"
+          >
+            Patient Name
+          </label>
+          <input
+            id="patient-name"
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Enter full name"
+            className="w-full border rounded px-2 py-1"
+          />
+        </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="patient-age">Age</Label>
-            <Input
-              id="patient-age"
-              type="number"
-              min={0}
-              placeholder="Age in years"
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
-            />
-          </div>
+        <div>
+          <label htmlFor="patient-age" className="block text-sm text-slate-600">
+            Age
+          </label>
+          <input
+            id="patient-age"
+            type="number"
+            min={0}
+            required
+            value={age}
+            onChange={(e) => setAge(e.target.value)}
+            placeholder="Age in years"
+            className="w-full border rounded px-2 py-1"
+          />
+        </div>
 
-          {error && <p className="text-sm text-red-500">{error}</p>}
+        <div>
+          <label
+            htmlFor="patient-doctor"
+            className="block text-sm text-slate-600"
+          >
+            Primary Doctor
+          </label>
+          {doctors.length ? (
+            <select
+              id="patient-doctor"
+              value={doctorId}
+              onChange={(e) => setDoctorId(e.target.value)}
+              className="w-full border rounded px-2 py-1"
+            >
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name} {d.type ? `• ${d.type}` : ""}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="text-xs text-slate-500">
+              No doctors found. Create a doctor first from{" "}
+              <span className="font-medium">Users &gt; Doctors</span>.
+            </div>
+          )}
+        </div>
 
-          <div className="flex items-center gap-3">
-            <Button type="submit" className="px-4 py-2">
-              Save Patient
-            </Button>
-            <p className="text-xs text-slate-500">
-              Data is stored locally in this browser (localStorage).
-            </p>
-          </div>
-        </form>
-      </div>
+        {error && <p className="text-sm text-red-500">{error}</p>}
+
+        <div className="flex items-center gap-3">
+          <button
+            type="submit"
+            className="px-3 py-1 bg-indigo-600 text-white rounded"
+          >
+            Save patient
+          </button>
+          <p className="text-xs text-slate-500">
+            Data is stored locally in this browser (localStorage).
+          </p>
+        </div>
+      </form>
     </div>
-  )
+  );
 }
