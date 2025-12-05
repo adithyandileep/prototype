@@ -6,7 +6,6 @@ import { getDoctorSession, clearDoctorSession, currentDoctor } from '@/app/lib/a
 import { load } from '@/app/lib/storage'
 import DoctorAvailability from '@/app/components/DoctorAvailablity'
 import { createVisit } from '@/app/lib/visits'
-import { generateId } from '@/app/lib/uid'
 
 export default function DoctorDashboardPage() {
   const router = useRouter()
@@ -51,34 +50,39 @@ export default function DoctorDashboardPage() {
   }
 
   // Acknowledge: create a visit record and redirect the doctor to the visit editor page
-  function handleAcknowledge(slot: any) {
+  // Note: createVisit will generate the visit id and persist it.
+  async function handleAcknowledge(slot: any) {
     if (!slot || !doctor) return
     const confirmOk = confirm(`Open visit page for patient ${slot.patientName ?? 'Unknown'}?`)
     if (!confirmOk) return
 
-    const visitId = generateId('visit_')
-    const visit = {
-      id: visitId,
-      patientId: slot.patientId || null,
+    // createVisit expects the limited shape: patientId?, doctorId?, slotId?, token?, complaints?, status?, initialData?
+    const created = createVisit({
+      patientId: slot.patientId ?? null,
       doctorId: doctor.id,
       slotId: slot.id,
-      appointmentId: slot.appointmentId ?? null,
       token: slot.token ?? null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      status: 'in-progress',
-      vitals: {},
       complaints: '',
-      diagnosis: '',
-      prescriptions: [],
-      investigations: [],
-      notes: ''
+      status: 'acknowledged', // valid status from the union
+      initialData: {
+        // any extra fields you want inside visit (vitals/prescriptions blank initially)
+        vitals: {},
+        prescriptions: [],
+        investigations: [],
+        diagnosis: '',
+        notes: '',
+      },
+    })
+
+    // createVisit returns the created record (with id). navigate using that id.
+    const visitId = created?.id
+    if (!visitId) {
+      alert('Could not create visit. Please try again.')
+      return
     }
-    createVisit(visit)
 
     // redirect to visit editor
-// after createVisit(visit)
-router.push(`/doctor/dashboard/${slot.patientId}/visit/${visitId}`)
+    router.push(`/doctor/dashboard/${slot.patientId}/visit/${visitId}`)
   }
 
   if (!session || !doctor) {

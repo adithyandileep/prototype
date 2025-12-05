@@ -19,7 +19,7 @@ export default function DoctorDetailPage() {
 
   useEffect(() => {
     if (!docId) return
-    const doctors = load('doctors', [])
+const doctors = load<any[]>('doctors', [])
     const found = doctors.find((d: any) => d.id === docId) || null
     setDoctor(found)
     if (found) setForm({ name: found.name ?? '', type: found.type ?? '' })
@@ -41,7 +41,7 @@ export default function DoctorDetailPage() {
 
   function saveDoctorEdits() {
     if (!docId) return
-    const doctors = load('doctors', [])
+const doctors = load<any[]>('doctors', [])
     const idx = doctors.findIndex((d: any) => d.id === docId)
     if (idx === -1) return alert('Doctor not found')
     doctors[idx] = { ...doctors[idx], name: form.name, type: form.type }

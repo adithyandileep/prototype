@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { load, save } from '@/app/lib/storage'
-import { getVisitById, updateVisit, getVisitsForPatient, createVisit } from '@/app/lib/visits'
+import { getVisitById, updateVisit, getVisitsForPatient, findSlotAndOwner } from '@/app/lib/visits'
 
 function ViewModal({ open, onClose, visit }: { open: boolean; onClose: ()=>void; visit: any }) {
   if (!open || !visit) return null
@@ -68,11 +68,11 @@ export default function DoctorVisitPage() {
   const params = useParams() as { patientId?: string; visitId?: string }
   const router = useRouter()
 
-  const patientId = params?.patientId
+  const routePatientId = params?.patientId
   const visitId = params?.visitId
 
-  const [visit, setVisit] = useState<any | null>(null)         // the persisted visit object
-  const [draft, setDraft] = useState<any | null>(null)         // local editable draft
+  const [visit, setVisit] = useState<any | null>(null)
+  const [draft, setDraft] = useState<any | null>(null)
   const [patient, setPatient] = useState<any | null>(null)
   const [doctor, setDoctor] = useState<any | null>(null)
   const [previousVisits, setPreviousVisits] = useState<any[]>([])
@@ -89,75 +89,110 @@ export default function DoctorVisitPage() {
     }
 
     setVisit(v)
-    // initialize draft from persisted visit (deep clone to avoid accidental mutation)
     setDraft(JSON.parse(JSON.stringify(v)))
 
-    // Load patient
-    const patients = load("patient_registration_patients", [])
-    const p = patients.find((x:any) => x.id === v.patientId) || null
-    setPatient(p)
+    // determine patientId and doctorId for this visit.
+    // Prefer v.patientId/v.doctorId, then route param, then infer via slot.
+    let visitPatientId = v.patientId ?? routePatientId ?? null
+    let visitDoctorId = v.doctorId ?? null
 
-    // Load doctor
-    const docs = load("doctors", [])
-    setDoctor(docs.find((d:any) => d.id === v.doctorId) || null)
+    if ((!visitPatientId || !visitDoctorId) && v.slotId) {
+      const res = findSlotAndOwner(v.slotId)
+      if (res) {
+        if (!visitDoctorId) visitDoctorId = res.doctorId
+        if (!visitPatientId && res.slot?.patientId) visitPatientId = res.slot.patientId
+      }
+    }
 
-    // Previous visits — only completed ones (exclude current)
-    const pv = getVisitsForPatient(v.patientId)
-    setPreviousVisits(pv.filter((p:any) => p.id !== visitId && p.status === 'completed'))
-  }, [visitId])
+    // Load patient info
+    if (visitPatientId) {
+      const patients = load<any[]>('patient_registration_patients', [])
+      const p = patients.find((x:any) => x.id === visitPatientId) || null
+      setPatient(p)
+    } else {
+      setPatient(null)
+    }
+
+    // Load doctor info
+    if (visitDoctorId) {
+      const docs = load<any[]>('doctors', [])
+      const d = docs.find((x:any) => x.id === visitDoctorId) || null
+      setDoctor(d)
+    } else {
+      setDoctor(null)
+    }
+
+    // previous completed visits for this patient (exclude current)
+    if (visitPatientId) {
+      const pv = getVisitsForPatient(visitPatientId)
+      setPreviousVisits(pv.filter((p:any) => p.id !== visitId && p.status === 'completed'))
+    } else {
+      setPreviousVisits([])
+    }
+  }, [visitId, routePatientId])
 
   if (!visit || draft === null) return <div className="p-4 border bg-white rounded">Visit not found</div>
 
-  // Persist the draft: mark as completed and save
   async function handleSave() {
     if (saving) return
     setSaving(true)
     try {
+      // ensure we persist the updated visit and mark completed
       const updated = {
         ...draft,
         status: 'completed',
         updatedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString()
+        completedAt: new Date().toISOString(),
       }
-      // persist visits storage
-      updateVisit(updated)
-      setVisit(updated)
-      setDraft(JSON.parse(JSON.stringify(updated)))
+      const saved = updateVisit(updated)
 
-      // update slot status & patient appointment - best-effort (same as before)
+      // guard: updateVisit can return null
+      if (!saved) {
+        alert('Failed to save visit.')
+        setSaving(false)
+        return
+      }
+
+      // persist saved into local state (safe to use `saved` now)
+      setVisit(saved)
+      setDraft(JSON.parse(JSON.stringify(saved)))
+
+      // If slot present, mark slot completed
       try {
-        if (updated.slotId && updated.doctorId) {
-          const slotsKey = `slots_${updated.doctorId}`
-          const slots = load(slotsKey, []) as any[]
-          const idx = slots.findIndex((s:any) => s.id === updated.slotId)
+        if (saved.slotId && saved.doctorId) {
+          const slotsKey = `slots_${saved.doctorId}`
+          const slots = load<any[]>(slotsKey, [])
+          const idx = slots.findIndex((s:any) => s.id === saved.slotId)
           if (idx !== -1) {
             slots[idx].status = 'completed'
             save(slotsKey, slots)
-            window.dispatchEvent(new CustomEvent('slots-updated', { detail: { doctorId: updated.doctorId } }))
+            window.dispatchEvent(new CustomEvent('slots-updated', { detail: { doctorId: saved.doctorId } }))
           }
         }
-        if (updated.patientId) {
+
+        // update patient's appointment record if present
+        const refreshPid = saved.patientId ?? routePatientId ?? null
+        if (refreshPid) {
           const PAT_KEY = 'patient_registration_patients'
-          const patients = load(PAT_KEY, []) as any[]
-          const pIdx = patients.findIndex((p:any) => p.id === updated.patientId)
+          const patients = load<any[]>(PAT_KEY, [])
+          const pIdx = patients.findIndex((p:any) => p.id === refreshPid)
           if (pIdx !== -1) {
             patients[pIdx].appointments = patients[pIdx].appointments || []
-            const apptIdx = patients[pIdx].appointments.findIndex((a:any) => a.slotId === updated.slotId || a.id === updated.appointmentId)
+            const apptIdx = patients[pIdx].appointments.findIndex((a:any) => a.slotId === saved.slotId || a.id === saved.appointmentId)
             if (apptIdx !== -1) {
               patients[pIdx].appointments[apptIdx].status = 'completed'
               patients[pIdx].appointments[apptIdx].completedAt = new Date().toISOString()
             }
             save(PAT_KEY, patients)
-            window.dispatchEvent(new CustomEvent('patients-updated', { detail: { patientId: updated.patientId } }))
+            window.dispatchEvent(new CustomEvent('patients-updated', { detail: { patientId: refreshPid } }))
           }
+          // refresh previous visits
+          const pv = getVisitsForPatient(refreshPid)
+          setPreviousVisits(pv.filter((p:any) => p.id !== saved.id && p.status === 'completed'))
         }
       } catch (e) {
         console.error('Error updating slot/patient during save', e)
       }
-
-      // refresh previous visits list in UI
-      const pv = getVisitsForPatient(updated.patientId)
-      setPreviousVisits(pv.filter((p:any) => p.id !== updated.id && p.status === 'completed'))
 
       alert('Visit saved and added to history.')
     } finally {
@@ -165,20 +200,17 @@ export default function DoctorVisitPage() {
     }
   }
 
-  // Mark completed: make sure draft is persisted as completed and redirect
   async function handleMarkCompleted() {
     if (saving) return
-    // persist changes (if any) then redirect
     await handleSave()
     router.push('/doctor/dashboard')
   }
 
-  // Draft update helpers (update draft state only — no persistence)
   function updateDraft(patch: any) {
     setDraft((d:any) => ({ ...d, ...patch }))
   }
 
-  // Nested array helpers operate on draft only
+  // array helpers
   function addPrescription() {
     const id = `presc_${Date.now().toString(36)}`
     const pres = draft.prescriptions || []
@@ -255,7 +287,7 @@ export default function DoctorVisitPage() {
               {previousVisits.map((pv:any)=>(
                 <li key={pv.id} className="p-2 rounded border flex items-start justify-between">
                   <div>
-                    <div className="font-medium">{pv.doctorId ? (load('doctors',[]).find((d:any)=>d.id===pv.doctorId)?.name || pv.doctorId) : 'Unknown doctor'}</div>
+                    <div className="font-medium">{pv.doctorId ? (load<any[]>('doctors',[]).find((d:any)=>d.id===pv.doctorId)?.name || pv.doctorId) : 'Unknown doctor'}</div>
                     <div className="text-xs text-slate-500">{new Date(pv.createdAt).toLocaleString()} — Status: {pv.status}</div>
                     {pv.diagnosis ? <div className="text-sm mt-2"><b>Diagnosis:</b> {pv.diagnosis}</div> : null}
                   </div>
