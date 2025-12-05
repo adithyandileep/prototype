@@ -10,16 +10,38 @@ export default function NewDoctorPage() {
   const router = useRouter()
   const [name, setName] = useState('')
   const [type, setType] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [types, setTypes] = useState<string[]>(() => load('doctor_types', ['General', 'Gynaecology', 'Dermatology']))
 
   useEffect(()=>{ if(types.length && !type) setType(types[0]) }, [types])
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault()
+    if (!name.trim()) return alert('Enter doctor name')
+    if (!type) return alert('Select a type')
+    if (!username.trim()) return alert('Enter username for doctor (unique)')
+    if (!password) return alert('Enter a password for doctor')
+
+    // ensure username unique
+    const doctors = load('doctors', []) as any[]
+    if (doctors.some(d => d.username === username.trim())) {
+      return alert('Username already taken. Choose another username.')
+    }
+
     const id = generateId('doc_')
-    const doctors = load('doctors', [])
-    doctors.push({ id, name, type })
+    doctors.push({
+      id,
+      name: name.trim(),
+      type,
+      username: username.trim(),
+      password, // NOTE: stored in plaintext here for demo only
+    })
     save('doctors', doctors)
+
+    // optionally persist doctor_types globally (you may remove if undesired)
+    save('doctor_types', types)
+
     router.push(`/admin/dashboard/users/doctor`) // back to list
   }
 
@@ -41,7 +63,17 @@ export default function NewDoctorPage() {
         </div>
 
         <div>
-          <DoctorTypeManager onTypesChange={(t)=>setTypes(t)} />
+          <label className="block text-sm text-slate-600">Username (doctor login)</label>
+          <input value={username} onChange={e=>setUsername(e.target.value)} className="w-full border rounded px-2 py-1" placeholder="unique username" />
+        </div>
+
+        <div>
+          <label className="block text-sm text-slate-600">Password</label>
+          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} className="w-full border rounded px-2 py-1" placeholder="secure password" />
+        </div>
+
+        <div>
+          <DoctorTypeManager types={types} onTypesChange={(t)=>setTypes(t)} />
         </div>
 
         <div className="flex gap-2">

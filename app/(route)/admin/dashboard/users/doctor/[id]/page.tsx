@@ -7,7 +7,6 @@ import { load, save } from '@/app/lib/storage'
 import DoctorAvailability from '@/app/components/DoctorAvailablity'
 import SlotModal from '@/app/components/SlotModal'
 
-
 export default function DoctorDetailPage() {
   const params = useParams() as { id?: string }
   const router = useRouter()
@@ -16,6 +15,7 @@ export default function DoctorDetailPage() {
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ name: '', type: '' })
+  const [bookings, setBookings] = useState<any[]>([])
 
   useEffect(() => {
     if (!docId) return
@@ -23,6 +23,20 @@ export default function DoctorDetailPage() {
     const found = doctors.find((d: any) => d.id === docId) || null
     setDoctor(found)
     if (found) setForm({ name: found.name ?? '', type: found.type ?? '' })
+  }, [docId])
+
+  useEffect(() => {
+    if (!docId) return
+    const all = load(`slots_${docId}`, []) as any[]
+    setBookings(all.filter(s => s.status === 'booked'))
+    function onSlotsUpdated(e: any) {
+      if (e?.detail?.doctorId === docId) {
+        const all2 = load(`slots_${docId}`, []) as any[]
+        setBookings(all2.filter(s => s.status === 'booked'))
+      }
+    }
+    window.addEventListener('slots-updated', onSlotsUpdated)
+    return () => window.removeEventListener('slots-updated', onSlotsUpdated)
   }, [docId])
 
   function saveDoctorEdits() {
@@ -89,10 +103,30 @@ export default function DoctorDetailPage() {
         )}
       </div>
 
-      {/* Admin: show create button and admin actions, but no 'book' action here */}
+      {/* Admin: availability (create slots etc) */}
       <DoctorAvailability doctorId={doctor.id} onOpenSlotModal={() => setOpen(true)} showCreateButton={true} showActions={true} />
 
       <SlotModal open={open} onClose={() => setOpen(false)} onSave={handleSaveSlotConfig} doctorId={doctor.id} />
+
+      {/* Booked appointments panel */}
+      <div className="bg-white p-4 rounded border">
+        <h4 className="font-medium">Booked Appointments</h4>
+        {bookings.length ? (
+          <ul className="mt-2 space-y-2">
+            {bookings.map((b:any)=>(
+              <li key={b.id} className="flex items-center justify-between p-2 rounded border">
+                <div>
+                  <div className="font-medium">{b.patientName ?? 'Unknown patient'} • Token: <span className="font-semibold">{b.token}</span></div>
+                  <div className="text-xs text-slate-600">{new Date(b.start).toLocaleString()}</div>
+                </div>
+                <div className="text-sm text-slate-500">Slot ID: {b.id}</div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-sm text-slate-500 mt-2">No bookings yet.</div>
+        )}
+      </div>
     </div>
   )
 }

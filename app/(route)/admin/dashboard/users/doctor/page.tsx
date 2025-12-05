@@ -39,7 +39,6 @@ export default function DoctorUsersPage() {
                 <td className="px-4 py-2">
                   <div className="flex gap-2">
                     <Link href={`/admin/dashboard/users/doctor/${d.id}`} className="text-indigo-600 text-sm">Open</Link>
-                    <Link href={`/admin/dashboard/users/doctor/${d.id}/book-appointment`} className="text-sm border px-2 py-1 rounded">Book (public)</Link>
                   </div>
                 </td>
               </tr>

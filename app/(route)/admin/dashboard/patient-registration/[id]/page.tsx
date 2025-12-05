@@ -1,3 +1,4 @@
+// app/admin/dashboard/patient-registration/[id]/page.tsx
 'use client'
 
 import React, { useEffect, useState } from 'react'
@@ -10,6 +11,7 @@ type Patient = {
   age: number
   doctorId: string | null
   createdAt: string
+  appointments?: any[]
 }
 
 type Doctor = {
@@ -36,7 +38,6 @@ export default function PatientDetailPage() {
 
   useEffect(() => {
     if (!patientId) return
-
     const patients = load(STORAGE_KEY, []) as Patient[]
     const found = patients.find(p => p.id === patientId) || null
     setPatient(found)
@@ -54,6 +55,24 @@ export default function PatientDetailPage() {
         setDoctor(doc)
       }
     }
+  }, [patientId])
+
+  // Listen for patients-updated (e.g. booking flow or doctor mark done dispatched this event)
+  useEffect(() => {
+    function onPatientsUpdated(e: any) {
+      if (!e?.detail) return
+      if (e.detail.patientId !== patientId) return
+      const patients = load(STORAGE_KEY, []) as Patient[]
+      const found = patients.find(p => p.id === patientId) || null
+      setPatient(found)
+      if (found && found.doctorId) {
+        const docs = load('doctors', []) as Doctor[]
+        const doc = docs.find(d => d.id === found.doctorId) || null
+        setDoctor(doc)
+      }
+    }
+    window.addEventListener('patients-updated', onPatientsUpdated)
+    return () => window.removeEventListener('patients-updated', onPatientsUpdated)
   }, [patientId])
 
   function savePatientEdits() {
@@ -83,9 +102,7 @@ export default function PatientDetailPage() {
 
     // broadcast for other pages if needed
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('patients-updated', { detail: { patientId } })
-      )
+      window.dispatchEvent(new CustomEvent('patients-updated', { detail: { patientId } }))
     }
 
     setPatient(updated)
@@ -109,11 +126,8 @@ export default function PatientDetailPage() {
       return
     }
 
-    // Go to the doctor booking page for this doctor.
-    // You can switch this to the public route if you prefer:
-    //   router.push(`/doctor/${patient.doctorId}/book-appointment?patientId=${patient.id}`)
     router.push(
-      `/admin/dashboard/patient-registration/${patient.id}/book-appointment?docId=${patient.doctorId}`
+      `/admin/dashboard/patient-registration/${patient.id}/book-appointment?docId=${patient.doctorId}&patientId=${patient.id}`
     )
   }
 
@@ -125,6 +139,12 @@ export default function PatientDetailPage() {
     return <div className="bg-white p-4 rounded border">Loading patient...</div>
   }
 
+  // Normalize appointment statuses: default booked if missing
+  const appointments = (patient.appointments || []).map(a => ({ ...a, status: a.status || 'booked' }))
+
+  const upcoming = appointments.filter((a:any) => a.status !== 'completed')
+  const history = appointments.filter((a:any) => a.status === 'completed').sort((a:any,b:any)=> new Date(b.completedAt||0).getTime() - new Date(a.completedAt||0).getTime())
+
   // Load all doctors once for dropdown when editing
   const allDoctors = (load('doctors', []) as Doctor[]) || []
 
@@ -135,9 +155,7 @@ export default function PatientDetailPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-lg font-semibold">{patient.name}</div>
-              <div className="text-sm text-slate-600">
-                Age: {patient.age} • ID: {patient.id}
-              </div>
+              <div className="text-sm text-slate-600">Age: {patient.age} • ID: {patient.id}</div>
               <div className="text-sm text-slate-600 mt-1">
                 Doctor:{' '}
                 {doctor
@@ -156,26 +174,9 @@ export default function PatientDetailPage() {
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => setEditing(true)}
-                className="px-3 py-1 border rounded text-sm"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() =>
-                  router.push('/admin/dashboard/patient-registration')
-                }
-                className="px-3 py-1 border rounded text-sm"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleAddAppointment}
-                className="px-3 py-1 bg-indigo-600 text-white rounded text-sm"
-              >
-                Add appointment
-              </button>
+              <button onClick={() => setEditing(true)} className="px-3 py-1 border rounded text-sm">Edit</button>
+              <button onClick={() => router.push('/admin/dashboard/patient-registration')} className="px-3 py-1 border rounded text-sm">Back</button>
+              <button onClick={handleAddAppointment} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Add appointment</button>
             </div>
           </div>
         ) : (
@@ -183,75 +184,75 @@ export default function PatientDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <div>
                 <label className="block text-sm text-slate-600">Name</label>
-                <input
-                  value={form.name}
-                  onChange={e =>
-                    setForm(s => ({ ...s, name: e.target.value }))
-                  }
-                  className="w-full border rounded px-2 py-1"
-                />
+                <input value={form.name} onChange={e => setForm(s => ({ ...s, name: e.target.value }))} className="w-full border rounded px-2 py-1" />
               </div>
               <div>
                 <label className="block text-sm text-slate-600">Age</label>
-                <input
-                  type="number"
-                  min={0}
-                  value={form.age}
-                  onChange={e =>
-                    setForm(s => ({ ...s, age: e.target.value }))
-                  }
-                  className="w-full border rounded px-2 py-1"
-                />
+                <input type="number" min={0} value={form.age} onChange={e => setForm(s => ({ ...s, age: e.target.value }))} className="w-full border rounded px-2 py-1" />
               </div>
               <div>
-                <label className="block text-sm text-slate-600">
-                  Primary Doctor
-                </label>
+                <label className="block text-sm text-slate-600">Primary Doctor</label>
                 {allDoctors.length ? (
-                  <select
-                    value={form.doctorId}
-                    onChange={e =>
-                      setForm(s => ({ ...s, doctorId: e.target.value }))
-                    }
-                    className="w-full border rounded px-2 py-1"
-                  >
+                  <select value={form.doctorId} onChange={e => setForm(s => ({ ...s, doctorId: e.target.value }))} className="w-full border rounded px-2 py-1">
                     <option value="">None</option>
-                    {allDoctors.map(d => (
-                      <option key={d.id} value={d.id}>
-                        {d.name} {d.type ? `• ${d.type}` : ''}
-                      </option>
-                    ))}
+                    {allDoctors.map(d => <option key={d.id} value={d.id}>{d.name} {d.type ? `• ${d.type}` : ''}</option>)}
                   </select>
                 ) : (
-                  <div className="text-xs text-slate-500 mt-1">
-                    No doctors found in system.
-                  </div>
+                  <div className="text-xs text-slate-500 mt-1">No doctors found in system.</div>
                 )}
               </div>
             </div>
 
             <div className="flex gap-2 mt-3">
-              <button
-                onClick={savePatientEdits}
-                className="px-3 py-1 bg-indigo-600 text-white rounded text-sm"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => {
-                  setEditing(false)
-                  setForm({
-                    name: patient.name,
-                    age: String(patient.age),
-                    doctorId: patient.doctorId ?? '',
-                  })
-                }}
-                className="px-3 py-1 border rounded text-sm"
-              >
-                Cancel
-              </button>
+              <button onClick={savePatientEdits} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Save</button>
+              <button onClick={() => {
+                setEditing(false)
+                setForm({ name: patient.name, age: String(patient.age), doctorId: patient.doctorId ?? '' })
+              }} className="px-3 py-1 border rounded text-sm">Cancel</button>
             </div>
           </div>
+        )}
+      </div>
+
+      {/* Upcoming Appointments */}
+      <div className="bg-white p-4 rounded border">
+        <h4 className="font-medium">Upcoming Appointments</h4>
+        {upcoming.length ? (
+          <ul className="mt-2 space-y-2">
+            {upcoming.map((a:any) => (
+              <li key={a.id} className="flex items-center justify-between p-2 rounded border">
+                <div>
+                  <div className="font-medium">{a.doctorName} • Token: <span className="font-semibold">{a.token}</span></div>
+                  <div className="text-xs text-slate-600">{new Date(a.start).toLocaleString()} — booked {new Date(a.bookedAt).toLocaleString()}</div>
+                </div>
+                <div className="text-sm text-slate-500">Slot ID: {a.slotId}</div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-sm text-slate-500 mt-2">No upcoming appointments.</div>
+        )}
+      </div>
+
+      {/* Appointment History */}
+      <div className="bg-white p-4 rounded border">
+        <h4 className="font-medium">Appointment History</h4>
+        {history.length ? (
+          <ul className="mt-2 space-y-2">
+            {history.map((a:any) => (
+              <li key={a.id} className="flex items-center justify-between p-2 rounded border">
+                <div>
+                  <div className="font-medium">{a.doctorName} • Token: <span className="font-semibold">{a.token}</span></div>
+                  <div className="text-xs text-slate-600">
+                    {new Date(a.start).toLocaleString()} — completed {a.completedAt ? new Date(a.completedAt).toLocaleString() : ''}
+                  </div>
+                </div>
+                <div className="text-sm text-slate-500">Slot ID: {a.slotId}</div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="text-sm text-slate-500 mt-2">No completed appointments yet.</div>
         )}
       </div>
     </div>
